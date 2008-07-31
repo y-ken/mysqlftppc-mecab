@@ -1,0 +1,16 @@
+# configure.in example for a plugin
+
+AC_INIT(plugin_mecab, 0.1)
+AM_INIT_AUTOMAKE
+AC_DISABLE_STATIC
+AC_PROG_LIBTOOL
+AC_ARG_WITH([mecab-config],
+ [AS_HELP_STRING([--with-mecab-config],[link with specified mecab])],
+ [],[with_mecab_config=check])
+AS_IF(
+ [test "x$with_mecab_config" != x], 
+  [CPPFLAGS="$CPPFLAGS `$with_mecab_config --cflags`" && LDFLAGS="$LDFLAGS `$with_mecab_config --libs`"],
+ [echo mecab-config not found])
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT
+
