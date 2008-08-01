@@ -110,9 +110,11 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
   mecab = mecab_new(0,NULL);
   node = (mecab_node_t*)mecab_sparse_tonode2(mecab, buffer, buffer_len);
   while(1){
-    if(node->stat==MECAB_EOS_NODE) break;
-    if(node->stat==MECAB_BOS_NODE){
-      // ignore
+    if(node->stat==MECAB_BOS_NODE || node->stat==MECAB_EOS_NODE){
+      // gap of sentence
+      if(qmode==MYSQL_FTPARSER_FULL_BOOLEAN_INFO){
+        param->mode = MYSQL_FTPARSER_FULL_BOOLEAN_INFO;
+      }
     }else{
       // get binary image for Unicode collation
       int binlen = uc->coll->strnxfrmlen(uc, (*numchars)(uc, node->surface, node->surface + node->length));
