@@ -25,5 +25,4 @@ collates with unicode collation. The encoding conversion is done automatically.
 
 
 * TODO
-- support of boolean mode syntax
 - mecab dictionary charset auto-detection

@@ -5,6 +5,8 @@
 #include <mysql/my_sys.h>
 #include <mecab.h>
 
+#include "ftbool.h"
+
 #include <mysql/plugin.h>
 
 #if !defined(__attribute__) && (defined(__cplusplus) || !defined(__GNUC__)  || __GNUC__ == 2 && __GNUC_MINOR__ < 8)
@@ -66,20 +68,64 @@ static uint str_convert(CHARSET_INFO *cs, char *from, int from_length,
   return (uint32)(wpos - to);
 }
 
+static void mecabize_add(CHARSET_INFO *uc, char *buffer, size_t buffer_len, MYSQL_FTPARSER_PARAM *param, MYSQL_FTPARSER_BOOLEAN_INFO *boolinfo){
+  mecab_t *mecab;
+  mecab_node_t *node;
+  
+  uchar* wbuffer;
+  size_t wbuffer_len = 0;
+  
+  int qmode = param->mode;
+  mecab = mecab_new(0,NULL);
+  node = (mecab_node_t*)mecab_sparse_tonode2(mecab, buffer, buffer_len);
+  while(1){
+    if(node->stat==MECAB_BOS_NODE || node->stat==MECAB_EOS_NODE){
+      // gap of sentence
+      if(qmode==MYSQL_FTPARSER_FULL_BOOLEAN_INFO){
+        param->mode = MYSQL_FTPARSER_FULL_BOOLEAN_INFO;
+      }
+    }else{
+      // get binary image for Unicode collation
+      int binlen = uc->coll->strnxfrmlen(uc, uc->cset->numchars(uc, node->surface, node->surface + node->length));
+      if(wbuffer_len < binlen){
+        if(wbuffer_len == 0){
+          wbuffer = (uchar*)my_malloc(binlen, MYF(0));
+        }else{
+          wbuffer = (uchar*)my_realloc(wbuffer,binlen,MYF(0));
+        }
+        wbuffer_len = binlen;
+      }
+      binlen = uc->coll->strnxfrm(uc, wbuffer, binlen, node->surface, node->length);
+      int c,mark;
+      uint t_res= uc->sort_order_big[0][0x20 * uc->sort_order[0]];
+      for(mark=0,c=0; c<binlen; c+=2){
+        if((*(w_buffer+c) == (t_res>>8)) && (*(w_buffer+c+1) == (t_res&0xFF))){
+          // it is space or padding.
+        }else{
+          mark = c;
+        }
+      }
+      binlen = mark+2;
+      
+      if(qmode==MYSQL_FTPARSER_FULL_BOOLEAN_INFO){
+        param->mysql_add_word(param, wbuffer, binlen, boolinfo);
+        param->mode = MYSQL_FTPARSER_WITH_STOPWORDS;
+      }else{
+        param->mysql_add_word(param, wbuffer, binlen, NULL);
+      }
+    }
+    if(!node->next) break;
+    node = node->next;
+  }
+  mecab_destroy(mecab);
+  if(wbuffer_len > 0) my_no_flags_free(wbuffer);
+}
+
 static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
 {
   CHARSET_INFO *cs = param->cs;
   CHARSET_INFO *uc = get_charset(192,MYF(0)); // my_charset_utf8_unicode_ci for unicode collation
   size_t (*numchars)(struct charset_info_st*, const char *b, const char *e);
-  
-  int qmode;
-  mecab_t *mecab;
-  mecab_node_t *node;
-  
-  uint mblen;
-  
-  uchar* wbuffer;
-  size_t wbuffer_len;
   
   int    buffer_alloc = 0;
   char*  buffer;
@@ -91,8 +137,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
     buffer_len = param->length;
   }else{
     // calculate mblen and malloc.
-    numchars = cs->cset->numchars;
-    mblen = (*numchars)(cs, param->doc, param->doc+param->length);
+    uint mblen = cs->cset->numchars(cs, param->doc, param->doc+param->length);
     buffer_len = uc->mbmaxlen * mblen;
     buffer = (char*)my_malloc(buffer_len, MYF(0));
     buffer_alloc = 1;
@@ -102,44 +147,99 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
   
   // buffer is to be free-ed
   param->flags = MYSQL_FTFLAGS_NEED_COPY;
-  MYSQL_FTPARSER_BOOLEAN_INFO bool_info_must ={ FT_TOKEN_WORD, 1, 0, 0, 0, ' ', 0 };
-  qmode = param->mode;
   
-  numchars = cs->cset->numchars;
-  wbuffer_len = 0;
-  mecab = mecab_new(0,NULL);
-  node = (mecab_node_t*)mecab_sparse_tonode2(mecab, buffer, buffer_len);
-  while(1){
-    if(node->stat==MECAB_BOS_NODE || node->stat==MECAB_EOS_NODE){
-      // gap of sentence
-      if(qmode==MYSQL_FTPARSER_FULL_BOOLEAN_INFO){
-        param->mode = MYSQL_FTPARSER_FULL_BOOLEAN_INFO;
-      }
-    }else{
-      // get binary image for Unicode collation
-      int binlen = uc->coll->strnxfrmlen(uc, (*numchars)(uc, node->surface, node->surface + node->length));
-      if(wbuffer_len < binlen){
-        if(wbuffer_len == 0){
-          wbuffer = (uchar*)my_malloc(binlen, MYF(0));
-        }else{
-          wbuffer = (uchar*)my_realloc(wbuffer,binlen,MYF(0));
-        }
-        wbuffer_len = binlen;
-      }
-      binlen = uc->coll->strnxfrm(uc, wbuffer, binlen, node->surface, node->length);
-      
-      if(qmode==MYSQL_FTPARSER_FULL_BOOLEAN_INFO){
-        param->mysql_add_word(param, wbuffer, binlen, &bool_info_must);
-        param->mode = MYSQL_FTPARSER_WITH_STOPWORDS;
+  if(param->mode == MYSQL_FTPARSER_FULL_BOOLEAN_INFO){
+    MYSQL_FTPARSER_BOOLEAN_INFO bool_info_may ={ FT_TOKEN_WORD, 0, 0, 0, 0, ' ', 0 };
+    MYSQL_FTPARSER_BOOLEAN_INFO instinfo;
+    int depth=0;
+    MYSQL_FTPARSER_BOOLEAN_INFO baseinfos[16];
+    instinfo = baseinfos[0] = bool_info_may;
+    
+    size_t tlen=0;
+    uchar *tmpbuffer;
+    tmpbuffer = (uchar*)my_malloc(buffer_len, MYF(0));
+    
+    int context=CTX_CONTROL;
+    SEQFLOW sf,sf_prev = SF_BROKEN;
+    char *pos=buffer;
+    while(pos < buffer+buffer_len){
+      int readsize;
+      my_wc_t dst;
+      sf = ctxscan(uc, pos, buffer+buffer_len, &dst, &readsize, context);
+      if(sf==SF_ESCAPE){
+        context |= CTX_ESCAPE;
+        context |= CTX_CONTROL;
       }else{
-        param->mysql_add_word(param, wbuffer, binlen, NULL);
+        context &= ~CTX_ESCAPE;
+        if(sf == SF_CHAR){
+          context &= ~CTX_CONTROL;
+        }else{
+          context |= CTX_CONTROL;
+        }
+        if(sf == SF_QUOTE_START) context |= CTX_QUOTE;
+        if(sf == SF_QUOTE_END)   context &= ~CTX_QUOTE;
+        if(sf == SF_LEFT_PAREN){
+          instinfo = baseinfos[depth];
+          depth++;
+          if(depth>16) depth=16;
+          baseinfos[depth] = instinfo;
+          instinfo.type = FT_TOKEN_LEFT_PAREN;
+          param->mysql_add_word(param, buffer, 0, &instinfo);
+        }
+        if(sf == SF_RIGHT_PAREN){
+          instinfo.type = FT_TOKEN_RIGHT_PAREN;
+          param->mysql_add_word(param, buffer, 0, &instinfo);
+          depth--;
+          if(depth<0) depth=0;
+        }
+        if(sf == SF_PLUS){
+          instinfo.yesno = 1;
+        }
+        if(sf == SF_MINUS){
+          instinfo.yesno = -1;
+        }
+        if(sf == SF_PLUS) instinfo.weight_adjust = 1;
+        if(sf == SF_MINUS) instinfo.weight_adjust = -1;
+        if(sf == SF_WASIGN){
+          instinfo.wasign = -1;
+        }
       }
+      if(sf == SF_WHITE || sf == SF_QUOTE_END || sf == SF_LEFT_PAREN || sf == SF_RIGHT_PAREN || sf == SF_TRUNC){
+        if(sf_prev == SF_CHAR){
+          if(sf == SF_TRUNC){
+            instinfo.trunc = 1;
+          }
+          mecabize_add(uc, tmpbuffer, tlen, param, &instinfo); // emit
+        }
+        instinfo = baseinfos[depth];
+      }
+      if(sf == SF_CHAR){
+        memcpy(tmpbuffer+tlen, pos, readsize);
+        tlen += readsize;
+      }else if(sf != SF_ESCAPE){
+        tlen = 0;
+      }
+      
+      if(readsize > 0){
+        pos += readsize;
+      }else if(readsize == MY_CS_ILSEQ){
+        pos++;
+      }else if(readsize > MY_CS_TOOSMALL){
+        pos += (-readsize);
+      }else{
+        break;
+      }
+      sf_prev = sf;
     }
-    if(!node->next) break;
-    node = node->next;
+    if(sf==SF_CHAR){
+      mecabize_add(uc, tmpbuffer, tlen, param, &instinfo);
+    }
+    
+    my_no_flags_free(tmpbuffer);
+  }else{
+    mecabize_add(uc, buffer, buffer_len, param, NULL);
   }
-  mecab_destroy(mecab);
-  if(wbuffer_len > 0) my_no_flags_free(wbuffer);
+  
   if(buffer_alloc) my_no_flags_free(buffer);
   return(0);
 }
