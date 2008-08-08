@@ -1,13 +1,14 @@
 #include <stdlib.h>
 #include <ctype.h>
-#include <mysql/my_global.h>
-#include <mysql/m_ctype.h>
-#include <mysql/my_sys.h>
 #include <mecab.h>
 
 #include "ftbool.h"
 
-#include <mysql/plugin.h>
+// mysql headers
+#include <my_global.h>
+#include <m_ctype.h>
+#include <my_sys.h>
+#include <plugin.h>
 
 #if !defined(__attribute__) && (defined(__cplusplus) || !defined(__GNUC__)  || __GNUC__ == 2 && __GNUC_MINOR__ < 8)
 #define __attribute__(A)
@@ -99,7 +100,7 @@ static void mecabize_add(CHARSET_INFO *uc, char *buffer, size_t buffer_len, MYSQ
       int c,mark;
       uint t_res= uc->sort_order_big[0][0x20 * uc->sort_order[0]];
       for(mark=0,c=0; c<binlen; c+=2){
-        if((*(w_buffer+c) == (t_res>>8)) && (*(w_buffer+c+1) == (t_res&0xFF))){
+        if((*(wbuffer+c) == (t_res>>8)) && (*(wbuffer+c+1) == (t_res&0xFF))){
           // it is space or padding.
         }else{
           mark = c;
