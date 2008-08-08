@@ -1,21 +1,3 @@
-* INSTALL
-First of all, you need mecab installed.
-
-If you check out the source from the repository, you need autoconf, automake and libtool 
-to build the plugin. Type as following:
-$ aclocal
-$ libtoolize --automake
-$ automake --add-missing
-$ touch INSTALL NEWS AUTHORS ChangeLog
-$ automake
-$ autoconf
-
-Then you start a normal installation process.
-$ ./configure --prefix=/path/to/mysql/install/path --with-mecab-config=/path/to/mecab/bin/mecab-config
-$ make
-# make install
-
-
 * SPEC
 This plugin implements mecab tokenizer. As of MySQL SQL syntax, you can
 query in natural langauge mode or in boolean mode.

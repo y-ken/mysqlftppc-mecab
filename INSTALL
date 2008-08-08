@@ -1,0 +1,16 @@
+* INSTALL
+First of all, you need mecab installed.
+
+If you check out the source from the repository, you need autoconf, automake and libtool 
+to build the plugin. Type as following:
+$ aclocal
+$ libtoolize --automake
+$ automake --add-missing
+$ automake
+$ autoconf
+
+Then you start a normal installation process.
+$ ./configure --with-mysql-config=/path/to/mysql_config --with-mecab-config=/path/to/mecab-config
+$ make
+# make install
+
