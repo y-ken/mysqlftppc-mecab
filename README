@@ -8,3 +8,4 @@ collates with unicode collation. The encoding conversion is done automatically.
 
 * TODO
 - mecab dictionary charset auto-detection
+- support of trunc operator
