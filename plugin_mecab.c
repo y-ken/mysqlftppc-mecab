@@ -107,16 +107,6 @@ static void mecabize_add(char *buffer, size_t buffer_len,
           wbuffer_len = binlen;
         }
         binlen = collator->coll->strnxfrm(collator, wbuffer, binlen, (uchar*)node->surface, (size_t)node->length);
-        int c,mark;
-        uint t_res= collator->sort_order_big[0][0x20 * collator->sort_order[0]];
-        for(mark=0,c=0; c<binlen; c+=2){
-          if((*(wbuffer+c) == (t_res>>8)) && (*(wbuffer+c+1) == (t_res&0xFF))){
-            // it is space or padding.
-          }else{
-            mark = c;
-          }
-        }
-        binlen = mark+2;
       }else{
         binlen = cs->mbmaxlen * uc->cset->numchars(uc, node->surface, node->surface + node->length);
         if(wbuffer_len < binlen){
@@ -176,16 +166,18 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
     size_t nm_used=0;
     nm_length = feed_length+32;
     nm = my_malloc(nm_length, MYF(MY_WME));
+    int status = 0;
     int mode = 1;
     if(strcmp(mecab_unicode_normalize, "C")==0) mode = 4;
     if(strcmp(mecab_unicode_normalize, "D")==0) mode = 2;
     if(strcmp(mecab_unicode_normalize, "KC")==0) mode = 5;
     if(strcmp(mecab_unicode_normalize, "KD")==0) mode = 3;
     if(strcmp(mecab_unicode_normalize, "FCD")==0) mode = 6;
-    if(uni_normalize(feed, feed_length, nm, nm_length, &nm_used, mode)!=0){
+    nm = uni_normalize(feed, feed_length, nm, nm_length, &nm_used, mode, &status);
+    if(status < 0){
        nm_length=nm_used;
        nm = my_realloc(nm, nm_length, MYF(MY_WME));
-       uni_normalize(feed, feed_length, nm, nm_length, &nm_used, mode);
+       nm = uni_normalize(feed, feed_length, nm, nm_length, &nm_used, mode, &status);
     }
     if(cv_length){
       cv = my_realloc(cv, nm_used, MYF(MY_WME));
@@ -443,7 +435,7 @@ int mecab_collation_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *sav
     }
     return -1;
 }
-static MYSQL_SYSVAR_STR(normalize, mecab_unicode_normalize,
+static MYSQL_SYSVAR_STR(normalization, mecab_unicode_normalize,
   PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC,
   "Set unicode normalization (OFF, C, D, KC, KD, FCD)",
   mecab_unicode_normalize_check, NULL, "OFF");
@@ -456,7 +448,7 @@ static MYSQL_SYSVAR_STR(collation, mecab_collation,
 static struct st_mysql_sys_var* mecab_system_variables[]= {
   MYSQL_SYSVAR(collation),
 #if HAVE_ICU
-  MYSQL_SYSVAR(normalize),
+  MYSQL_SYSVAR(normalization),
 #endif
   NULL
 };
