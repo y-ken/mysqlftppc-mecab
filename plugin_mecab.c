@@ -17,7 +17,6 @@
 #endif
 
 static char* mecab_unicode_normalize;
-static char* mecab_collation;
 
 static int mecab_parser_plugin_init(void *arg __attribute__((unused)))
 {
@@ -73,7 +72,7 @@ static size_t str_convert(CHARSET_INFO *cs, char *from, int from_length,
 }
 
 static void mecabize_add(char *buffer, size_t buffer_len,
-    MYSQL_FTPARSER_PARAM *param, MYSQL_FTPARSER_BOOLEAN_INFO *boolinfo, CHARSET_INFO *collator, CHARSET_INFO *cs){
+    MYSQL_FTPARSER_PARAM *param, MYSQL_FTPARSER_BOOLEAN_INFO *boolinfo, CHARSET_INFO *cs){
   mecab_t *mecab;
   mecab_node_t *node;
   CHARSET_INFO *uc = get_charset(33,MYF(0));
@@ -95,30 +94,16 @@ static void mecabize_add(char *buffer, size_t buffer_len,
       }
     }else{
       int binlen;
-      if(collator){
-        // get binary image for Unicode collation
-        binlen = collator->coll->strnxfrmlen(collator, uc->cset->numchars(uc, node->surface, node->surface + node->length));
-        if(wbuffer_len < binlen){
-          if(wbuffer_len == 0){
-            wbuffer = (uchar*)my_malloc(binlen, MYF(MY_WME));
-          }else{
-            wbuffer = (uchar*)my_realloc(wbuffer,binlen,MYF(MY_WME));
-          }
-          wbuffer_len = binlen;
+      binlen = cs->mbmaxlen * uc->cset->numchars(uc, node->surface, node->surface + node->length);
+      if(wbuffer_len < binlen){
+        if(wbuffer_len == 0){
+          wbuffer = (uchar*)my_malloc(binlen, MYF(MY_WME));
+        }else{
+          wbuffer = (uchar*)my_realloc(wbuffer,binlen,MYF(MY_WME));
         }
-        binlen = collator->coll->strnxfrm(collator, wbuffer, binlen, (uchar*)node->surface, (size_t)node->length);
-      }else{
-        binlen = cs->mbmaxlen * uc->cset->numchars(uc, node->surface, node->surface + node->length);
-        if(wbuffer_len < binlen){
-          if(wbuffer_len == 0){
-            wbuffer = (uchar*)my_malloc(binlen, MYF(MY_WME));
-          }else{
-            wbuffer = (uchar*)my_realloc(wbuffer,binlen,MYF(MY_WME));
-          }
-          wbuffer_len = binlen;
-        }
-        binlen = str_convert(uc, (char*)node->surface, node->length, cs, (char*)wbuffer, binlen);
+        wbuffer_len = binlen;
       }
+      binlen = str_convert(uc, (char*)node->surface, node->length, cs, (char*)wbuffer, binlen);
       
       if(qmode==MYSQL_FTPARSER_FULL_BOOLEAN_INFO){
         param->mysql_add_word(param, (char*)wbuffer, binlen, boolinfo);
@@ -137,7 +122,6 @@ static void mecabize_add(char *buffer, size_t buffer_len,
 static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
 {
   CHARSET_INFO *uc = NULL;
-  CHARSET_INFO *collator = NULL; // if we use collation, it is not null
   CHARSET_INFO *cs = param->cs;
   char* feed = param->doc;
   size_t feed_length = (size_t)param->length;
@@ -192,52 +176,6 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
   }
 #endif
   
-  if(strcmp(mecab_collation, "OFF")!=0){
-//     bin 90
-//     czech 138
-//     roman 143
-//     danish 139
-//     slovak 141
-//     polish 133
-//     spanish 135
-//     swedish 136
-//     turkish 137
-//     general 35
-//     unicode 128
-//     latvian 130
-//     persian 144
-//     spanish2 142
-//     romanian 131
-//     estonian 134
-//     icelandic 129
-//     slovenian 132
-//     esperanto 145
-//     hungarian 146
-//     lithuanian 140
-    // charset is always UCS2
-    if(strcmp(mecab_collation, "bin")==0) collator = get_charset(90,MYF(0));
-    if(strcmp(mecab_collation, "czech")==0) collator = get_charset(138,MYF(0));
-    if(strcmp(mecab_collation, "roman")==0) collator = get_charset(143,MYF(0));
-    if(strcmp(mecab_collation, "danish")==0) collator = get_charset(139,MYF(0));
-    if(strcmp(mecab_collation, "slovak")==0) collator = get_charset(141,MYF(0));
-    if(strcmp(mecab_collation, "polish")==0) collator = get_charset(133,MYF(0));
-    if(strcmp(mecab_collation, "spanish")==0) collator = get_charset(135,MYF(0));
-    if(strcmp(mecab_collation, "swedish")==0) collator = get_charset(136,MYF(0));
-    if(strcmp(mecab_collation, "turkish")==0) collator = get_charset(137,MYF(0));
-    if(strcmp(mecab_collation, "general")==0) collator = get_charset(35,MYF(0));
-    if(strcmp(mecab_collation, "unicode")==0) collator = get_charset(128,MYF(0));
-    if(strcmp(mecab_collation, "latvian")==0) collator = get_charset(130,MYF(0));
-    if(strcmp(mecab_collation, "persian")==0) collator = get_charset(144,MYF(0));
-    if(strcmp(mecab_collation, "spanish2")==0) collator = get_charset(142,MYF(0));
-    if(strcmp(mecab_collation, "romanian")==0) collator = get_charset(131,MYF(0));
-    if(strcmp(mecab_collation, "estonian")==0) collator = get_charset(134,MYF(0));
-    if(strcmp(mecab_collation, "icelandic")==0) collator = get_charset(129,MYF(0));
-    if(strcmp(mecab_collation, "slovenian")==0) collator = get_charset(132,MYF(0));
-    if(strcmp(mecab_collation, "esperanto")==0) collator = get_charset(145,MYF(0));
-    if(strcmp(mecab_collation, "hungarian")==0) collator = get_charset(146,MYF(0));
-    if(strcmp(mecab_collation, "lithuanian")==0) collator = get_charset(140,MYF(0));
-  }
-  
   // buffer is to be free-ed
   int qmode = param->mode;
   param->flags = MYSQL_FTFLAGS_NEED_COPY;
@@ -265,7 +203,6 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
       }else{
         sf = ctxscan(cs, pos, docend, &dst, &readsize, context);
       }
-      if(collator && sf==SF_TRUNC) sf=SF_CHAR;
       
       if(sf==SF_ESCAPE){
         context |= CTX_ESCAPE;
@@ -310,7 +247,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
           if(sf == SF_TRUNC){
             instinfo.trunc = 1;
           }
-          mecabize_add(tmpbuffer, tlen, param, &instinfo, collator, cs); // emit
+          mecabize_add(tmpbuffer, tlen, param, &instinfo, cs); // emit
         }
         instinfo = baseinfos[depth];
       }
@@ -333,12 +270,12 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
       sf_prev = sf;
     }
     if(sf==SF_CHAR){
-      mecabize_add(tmpbuffer, tlen, param, &instinfo, collator, cs);
+      mecabize_add(tmpbuffer, tlen, param, &instinfo, cs);
     }
     
     my_free(tmpbuffer, MYF(0));
   }else{
-    mecabize_add(feed, feed_length, param, NULL, collator, cs);
+    mecabize_add(feed, feed_length, param, NULL, cs);
   }
   
   if(cv_length) my_free(cv, MYF(0));
@@ -368,85 +305,12 @@ int mecab_unicode_normalize_check(MYSQL_THD thd, struct st_mysql_sys_var *var, v
     }
     return -1;
 }
-int mecab_collation_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *save, struct st_mysql_value *value){
-    char buf[32];
-    int len=32;
-    const char *str;
-    
-    str = value->val_str(value,buf,&len);
-    if(!str) return -1;
-    *(const char**)save=str;
-//     bin 90
-//     czech 138
-//     roman 143
-//     danish 139
-//     slovak 141
-//     polish 133
-//     spanish 135
-//     swedish 136
-//     turkish 137
-//     general 35
-//     unicode 128
-//     latvian 130
-//     persian 144
-//     spanish2 142
-//     romanian 131
-//     estonian 134
-//     icelandic 129
-//     slovenian 132
-//     esperanto 145
-//     hungarian 146
-//     lithuanian 140
-    if(len==3){
-        if(memcmp("OFF", str, len)==0) return 0;
-        if(memcmp("bin", str, len)==0 && get_charset(90, MYF(0))) return 0;
-    }
-    if(len==5){
-        if(memcmp("czech", str, len)==0 && get_charset(138, MYF(0))) return 0;
-        if(memcmp("roman", str, len)==0 && get_charset(143, MYF(0))) return 0;
-    }
-    if(len==6){
-        if(memcmp("danish", str, len)==0 && get_charset(139, MYF(0))) return 0;
-        if(memcmp("slovak", str, len)==0 && get_charset(141, MYF(0))) return 0;
-        if(memcmp("polish", str, len)==0 && get_charset(133, MYF(0))) return 0;
-    }
-    if(len==7){
-        if(memcmp("spanish", str, len)==0 && get_charset(135, MYF(0))) return 0;
-        if(memcmp("swedish", str, len)==0 && get_charset(136, MYF(0))) return 0;
-        if(memcmp("turkish", str, len)==0 && get_charset(137, MYF(0))) return 0;
-        if(memcmp("general", str, len)==0 && get_charset(35, MYF(0))) return 0;
-        if(memcmp("unicode", str, len)==0 && get_charset(128, MYF(0))) return 0;
-        if(memcmp("latvian", str, len)==0 && get_charset(130, MYF(0))) return 0;
-        if(memcmp("persian", str, len)==0 && get_charset(144, MYF(0))) return 0;
-    }
-    if(len==8){
-        if(memcmp("spanish2", str, len)==0 && get_charset(142, MYF(0))) return 0;
-        if(memcmp("romanian", str, len)==0 && get_charset(131, MYF(0))) return 0;
-        if(memcmp("estonian", str, len)==0 && get_charset(134, MYF(0))) return 0;
-    }
-    if(len==9){
-        if(memcmp("icelandic", str, len)==0 && get_charset(129, MYF(0))) return 0;
-        if(memcmp("slovenian", str, len)==0 && get_charset(132, MYF(0))) return 0;
-        if(memcmp("esperanto", str, len)==0 && get_charset(145, MYF(0))) return 0;
-        if(memcmp("hungarian", str, len)==0 && get_charset(146, MYF(0))) return 0;
-    }
-    if(len==10){
-        if(memcmp("lithuanian", str, len)==0 && get_charset(140, MYF(0))) return 0;
-    }
-    return -1;
-}
 static MYSQL_SYSVAR_STR(normalization, mecab_unicode_normalize,
   PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC,
   "Set unicode normalization (OFF, C, D, KC, KD, FCD)",
   mecab_unicode_normalize_check, NULL, "OFF");
 
-static MYSQL_SYSVAR_STR(collation, mecab_collation,
-  PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC,
-  "Set unicode collation mode (OFF, unicode, general, etc.)",
-  mecab_collation_check, NULL, "OFF");
-
 static struct st_mysql_sys_var* mecab_system_variables[]= {
-  MYSQL_SYSVAR(collation),
 #if HAVE_ICU
   MYSQL_SYSVAR(normalization),
 #endif

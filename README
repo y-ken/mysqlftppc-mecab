@@ -2,10 +2,5 @@
 This plugin implements mecab tokenizer. As of MySQL SQL syntax, you can
 query in natural langauge mode or in boolean mode.
 
-Both natural language mode and boolean mode use unicode internally, and
-collates with unicode collation. The encoding conversion is done automatically.
-
-
 * TODO
 - mecab dictionary charset auto-detection
-- support of trunc operator
