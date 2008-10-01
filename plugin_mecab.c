@@ -103,31 +103,33 @@ static void mecabize_add(char *buffer, size_t buffer_len,
     uc=get_charset(33,MYF(0));
   }
   
+  int inquot=0;
   size_t wbuffer_len = 128;
   uchar* wbuffer = (uchar*)my_malloc(wbuffer_len,MYF(MY_WME));
   
   int qmode = param->mode;
   mecab = mecab_new(0,NULL);
-  if(buffer[buffer_len]=='\0') buffer_len -= 1;
   node = (mecab_node_t*)mecab_sparse_tonode2(mecab, buffer, buffer_len);
   if(!node) return; // mecab might not have UTF-8 dictionary in this case.
   
   while(1){
     if(node->stat==MECAB_BOS_NODE){
-      if(param->mode==MYSQL_FTPARSER_FULL_BOOLEAN_INFO){
-        boolinfo->quot = (char*)1;
-        boolinfo->type = FT_TOKEN_LEFT_PAREN;
-        param->mysql_add_word(param, buffer, 0, boolinfo);
-        boolinfo->type = FT_TOKEN_WORD;
-      }
+      // emission is delayed until a token is found.
     }else if(node->stat==MECAB_EOS_NODE){
-      if(param->mode==MYSQL_FTPARSER_FULL_BOOLEAN_INFO){
+      if(param->mode==MYSQL_FTPARSER_FULL_BOOLEAN_INFO && boolinfo->quot){
         boolinfo->type = FT_TOKEN_RIGHT_PAREN;
         param->mysql_add_word(param, buffer, 0, boolinfo);
         boolinfo->type = FT_TOKEN_WORD;
         boolinfo->quot = NULL;
       }
     }else{
+      if(param->mode==MYSQL_FTPARSER_FULL_BOOLEAN_INFO && boolinfo->quot && !inquot){
+        boolinfo->quot = (char*)1;
+        boolinfo->type = FT_TOKEN_LEFT_PAREN;
+        param->mysql_add_word(param, buffer, 0, boolinfo);
+        boolinfo->type = FT_TOKEN_WORD;
+        inquot=1;
+      }
       if(uc){
         int binlen = cs->mbmaxlen * uc->cset->numchars(uc, node->surface, node->surface + node->length);
         if(wbuffer_len < binlen){
@@ -255,8 +257,13 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
         }else{
           context |= CTX_CONTROL;
         }
-        if(sf == SF_QUOTE_START) context |= CTX_QUOTE;
-        if(sf == SF_QUOTE_END)   context &= ~CTX_QUOTE;
+        if(sf == SF_QUOTE_START){
+          context |= CTX_QUOTE;
+          instinfo.quot=(char*)1;
+        }
+        if(sf == SF_QUOTE_END){
+          context &= ~CTX_QUOTE;
+        }
         if(sf == SF_LEFT_PAREN){
           instinfo = baseinfos[depth];
           depth++;
@@ -286,21 +293,21 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
         if(sf == SF_WASIGN){
           instinfo.wasign = -1;
         }
-      }
-      if(sf == SF_WHITE || sf == SF_QUOTE_END || sf == SF_LEFT_PAREN || sf == SF_RIGHT_PAREN || sf == SF_TRUNC){
-        if(sf_prev == SF_CHAR){
-          if(sf == SF_TRUNC){
-            instinfo.trunc = 1;
+        if(sf == SF_WHITE || sf == SF_QUOTE_END || sf == SF_LEFT_PAREN || sf == SF_RIGHT_PAREN || sf == SF_TRUNC){
+          if(sf_prev == SF_CHAR){
+            if(sf == SF_TRUNC){
+              instinfo.trunc = 1;
+            }
+            mecabize_add(tmpbuffer, tlen, param, &instinfo, cs); // emit
           }
-          mecabize_add(tmpbuffer, tlen, param, &instinfo, cs); // emit
+          instinfo = baseinfos[depth];
         }
-        instinfo = baseinfos[depth];
-      }
-      if(sf == SF_CHAR){
-        memcpy(tmpbuffer+tlen, pos, readsize);
-        tlen += readsize;
-      }else if(sf != SF_ESCAPE){
-        tlen = 0;
+        if(sf == SF_CHAR){
+          memcpy(tmpbuffer+tlen, pos, readsize);
+          tlen += readsize;
+        }else if(sf != SF_ESCAPE){
+          tlen = 0;
+        }
       }
       
       if(readsize > 0){
