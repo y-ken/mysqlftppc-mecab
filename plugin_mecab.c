@@ -373,6 +373,13 @@ int mecab_unicode_normalize_check(MYSQL_THD thd, struct st_mysql_sys_var *var, v
     return -1;
 }
 
+static struct st_mysql_show_var mecab_status[]=
+{
+  {"ICU_unicode_version", (char *)icu_unicode_version, SHOW_CHAR},
+  {0,0,0}
+};
+
+
 static MYSQL_SYSVAR_STR(normalization, mecab_unicode_normalize,
   PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC,
   "Set unicode normalization (OFF, C, D, KC, KD, FCD)",
@@ -411,7 +418,7 @@ mysql_declare_plugin(ft_mecab)
   mecab_parser_plugin_init,  /* init function (when loaded)     */
   mecab_parser_plugin_deinit,/* deinit function (when unloaded) */
   0x0013,                     /* version                         */
-  NULL,                       /* status variables                */
+  mecab_status,               /* status variables                */
   mecab_system_variables,     /* system variables                */
   NULL
 }
