@@ -94,8 +94,17 @@ static size_t str_convert(CHARSET_INFO *cs, char *from, size_t from_length,
   return (size_t)(wpos - to);
 }
 
+/**
+ * Parse a string and add tokens.
+ * @param buffer buffer to be parsed by mecab
+ * @param buffer_len the length of the buffer
+ * @param param MYSQL_FTPARSER_PARAM
+ * @param boolinfo MYSQL_FTPARSER_BOOLEAN_INFO. This may be NULL for natural mode.
+ * @param cs CHARSET_INFO of the table definition.
+ * @param isToken 0 if the buffer was phrase. 1 if the buffer was a token itself.
+ */
 static void mecabize_add(char *buffer, size_t buffer_len,
-    MYSQL_FTPARSER_PARAM *param, MYSQL_FTPARSER_BOOLEAN_INFO *boolinfo, CHARSET_INFO *cs){
+    MYSQL_FTPARSER_PARAM *param, MYSQL_FTPARSER_BOOLEAN_INFO *boolinfo, CHARSET_INFO *cs, int isToken){
   mecab_t *mecab;
   mecab_node_t *node;
   CHARSET_INFO *uc=NULL;
@@ -106,6 +115,25 @@ static void mecabize_add(char *buffer, size_t buffer_len,
   int inquot=0;
   size_t wbuffer_len = 128;
   uchar* wbuffer = (uchar*)my_malloc(wbuffer_len,MYF(MY_WME));
+  
+  if(isToken){
+    if(uc){
+      int binlen = cs->mbmaxlen * uc->cset->numchars(uc, buffer, buffer+buffer_len);
+      if(wbuffer_len < binlen){
+        wbuffer = (uchar*)my_realloc(wbuffer,binlen,MYF(MY_WME));
+        wbuffer_len = binlen;
+      }
+      binlen = str_convert(uc, (char*)buffer, buffer_len, cs, (char*)wbuffer, binlen);
+      if(binlen>0 && binlen < HA_FT_MAXBYTELEN){
+        param->mysql_add_word(param, (char*)wbuffer, binlen, boolinfo);
+      }
+    }else{
+      if(node->length>0 && node->length < HA_FT_MAXBYTELEN){
+        param->mysql_add_word(param, (char*)buffer, buffer_len, boolinfo);
+      }
+    }
+    return;
+  }
   
   int qmode = param->mode;
   mecab = mecab_new(0,NULL);
@@ -298,7 +326,11 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
             if(sf == SF_TRUNC){
               instinfo.trunc = 1;
             }
-            mecabize_add(tmpbuffer, tlen, param, &instinfo, cs); // emit
+            if(sf==SF_QUOTE_END){
+              mecabize_add(tmpbuffer, tlen, param, &instinfo, cs, 0); // emit
+            }else{
+              mecabize_add(tmpbuffer, tlen, param, &instinfo, cs, 1); // emit
+            }
           }
           instinfo = baseinfos[depth];
         }
@@ -320,12 +352,12 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
       sf_prev = sf;
     }
     if(sf==SF_CHAR){
-      mecabize_add(tmpbuffer, tlen, param, &instinfo, cs);
+      mecabize_add(tmpbuffer, tlen, param, &instinfo, cs, 1);
     }
     
     my_free(tmpbuffer, MYF(0));
   }else{
-    mecabize_add(feed, feed_length, param, NULL, cs);
+    mecabize_add(feed, feed_length, param, NULL, cs, 0);
   }
   if(feed_req_free) my_free(feed, MYF(0));
   
@@ -417,7 +449,7 @@ mysql_declare_plugin(ft_mecab)
   PLUGIN_LICENSE_BSD,
   mecab_parser_plugin_init,  /* init function (when loaded)     */
   mecab_parser_plugin_deinit,/* deinit function (when unloaded) */
-  0x0013,                     /* version                         */
+  0x0014,                     /* version                         */
   mecab_status,               /* status variables                */
   mecab_system_variables,     /* system variables                */
   NULL
