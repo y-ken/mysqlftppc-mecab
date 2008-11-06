@@ -23,9 +23,12 @@
 #define __attribute__(A)
 #endif
 
-static char* mecab_unicode_normalize="OFF";
-static char* mecab_unicode_version="DEFAULT";
-static char icu_unicode_version[32];
+static char* mecab_unicode_normalize;
+static char* mecab_unicode_version;
+static char  mecab_info[128];
+static char* mecab_dicdir;
+static char* mecab_userdic;
+static my_bool mecab_partial;
 
 static void* icu_malloc(const void* context, size_t size){ return my_malloc(size,MYF(MY_WME)); }
 static void* icu_realloc(const void* context, void* ptr, size_t size){ return my_realloc(ptr,size,MYF(MY_WME)); }
@@ -33,11 +36,21 @@ static void  icu_free(const void* context, void *ptr){ my_free(ptr,MYF(0)); }
 
 static int mecab_parser_plugin_init(void *arg __attribute__((unused)))
 {
+  strcat(mecab_info, "with mecab ");
+  strcat(mecab_info, mecab_version());
 #if HAVE_ICU
+  char icu_tmp_str[16];
   char errstr[128];
   UVersionInfo versionInfo;
-  u_getUnicodeVersion(versionInfo);
-  u_versionToString(versionInfo, icu_unicode_version);
+  u_getVersion(versionInfo); // get ICU version
+  u_versionToString(versionInfo, icu_tmp_str);
+  strcat(mecab_info, ", ICU ");
+  strcat(mecab_info, icu_tmp_str);
+  u_getUnicodeVersion(versionInfo); // get ICU Unicode version
+  u_versionToString(versionInfo, icu_tmp_str);
+  strcat(mecab_info, "(Unicode ");
+  strcat(mecab_info, icu_tmp_str);
+  strcat(mecab_info, ")");
   
   UErrorCode ustatus=0;
   u_setMemoryFunctions(NULL, icu_malloc, icu_realloc, icu_free, &ustatus);
@@ -136,7 +149,19 @@ static void mecabize_add(char *buffer, size_t buffer_len,
   }
   
   int qmode = param->mode;
-  mecab = mecab_new(0,NULL);
+  char *arg="";
+  if(strlen(mecab_dicdir)>0){
+    strcat(arg, " -d ");
+    strcat(arg, mecab_dicdir);
+  }
+  if(strlen(mecab_userdic)>0){
+    strcat(arg, " -u ");
+    strcat(arg, mecab_userdic);
+  }
+  if(mecab_partial==TRUE){
+    strcat(arg, " -p ");
+  }
+  mecab = mecab_new2(arg);
   node = (mecab_node_t*)mecab_sparse_tonode2(mecab, buffer, buffer_len);
   if(!node) return; // mecab might not have UTF-8 dictionary in this case.
   
@@ -364,6 +389,25 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
   DBUG_RETURN(0);
 }
 
+int mecab_file_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *save, struct st_mysql_value *value){
+    char buf[4];
+    int len=4;
+    const char *str;
+    
+    str = value->val_str(value,buf,&len);
+    if(!str) return -1;
+    *(const char**)save=str;
+    
+    if(strlen(str)==0) return -1;
+    char* tokens=strtok((char*)str, ",");
+    while(tokens != NULL){
+      FILE *fp=fopen(str, "r");
+      if(fp==NULL) return -1;
+      fclose(fp);
+    }
+    return 0;
+}
+
 int mecab_unicode_version_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *save, struct st_mysql_value *value){
     char buf[4];
     int len=4;
@@ -407,10 +451,24 @@ int mecab_unicode_normalize_check(MYSQL_THD thd, struct st_mysql_sys_var *var, v
 
 static struct st_mysql_show_var mecab_status[]=
 {
-  {"ICU_unicode_version", (char *)icu_unicode_version, SHOW_CHAR},
+  {"Mecab_info", (char *)mecab_info, SHOW_CHAR},
   {0,0,0}
 };
 
+static MYSQL_SYSVAR_STR(dicdir, mecab_dicdir,
+  PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC,
+  "Mecab system dictionary directory",
+  mecab_file_check, NULL, "");
+
+static MYSQL_SYSVAR_STR(userdic, mecab_userdic,
+  PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC,
+  "Mecab user dictionary file",
+  mecab_file_check, NULL, "");
+
+static MYSQL_SYSVAR_BOOL(partial, mecab_partial, 
+  PLUGIN_VAR_OPCMDARG,
+  "Mecab partial mode",
+  NULL, NULL, FALSE);
 
 static MYSQL_SYSVAR_STR(normalization, mecab_unicode_normalize,
   PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC,
@@ -423,6 +481,9 @@ static MYSQL_SYSVAR_STR(unicode_version, mecab_unicode_version,
   mecab_unicode_version_check, NULL, "DEFAULT");
 
 static struct st_mysql_sys_var* mecab_system_variables[]= {
+  MYSQL_SYSVAR(dicdir),
+  MYSQL_SYSVAR(userdic),
+  MYSQL_SYSVAR(partial),
 #if HAVE_ICU
   MYSQL_SYSVAR(normalization),
   MYSQL_SYSVAR(unicode_version),
