@@ -59,6 +59,8 @@ static int mecab_parser_plugin_init(void *arg __attribute__((unused)))
     fputs(errstr, stderr);
     fflush(stderr);
   }
+#else
+  strcat(mecab_info, ", without ICU");
 #endif
   return(0);
 }
