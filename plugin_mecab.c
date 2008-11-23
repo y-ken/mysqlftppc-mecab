@@ -143,7 +143,7 @@ static void mecabize_add(char *buffer, size_t buffer_len,
         param->mysql_add_word(param, (char*)wbuffer, binlen, boolinfo);
       }
     }else{
-      if(node->length>0 && node->length < HA_FT_MAXBYTELEN){
+      if(buffer_len>0 && buffer_len < HA_FT_MAXBYTELEN){
         param->mysql_add_word(param, (char*)buffer, buffer_len, boolinfo);
       }
     }
