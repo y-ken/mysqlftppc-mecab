@@ -239,7 +239,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
   
 #if HAVE_ICU
   // normalize
-  if(strcmp(mecab_unicode_normalize, "OFF")!=0){
+  if(mecab_unicode_normalize && strcmp(mecab_unicode_normalize, "OFF")!=0){
     char* nm;
     char* t;
     size_t nm_length = feed_length+32;
@@ -253,7 +253,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
     if(strcmp(mecab_unicode_normalize, "KC")==0) mode = UNORM_NFKC;
     if(strcmp(mecab_unicode_normalize, "KD")==0) mode = UNORM_NFKD;
     if(strcmp(mecab_unicode_normalize, "FCD")==0) mode = UNORM_FCD;
-    if(strcmp(mecab_unicode_version, "3.2")==0) options |= UNORM_UNICODE_3_2;
+    if(mecab_unicode_version && strcmp(mecab_unicode_version, "3.2")==0) options |= UNORM_UNICODE_3_2;
     t = uni_normalize(feed, feed_length, nm, nm_length, &nm_used, mode, &status);
     if(status != 0){
       nm_length=nm_used;
@@ -512,7 +512,7 @@ mysql_declare_plugin(ft_mecab)
   PLUGIN_LICENSE_BSD,
   mecab_parser_plugin_init,  /* init function (when loaded)     */
   mecab_parser_plugin_deinit,/* deinit function (when unloaded) */
-  0x0014,                     /* version                         */
+  0x0015,                     /* version                         */
   mecab_status,               /* status variables                */
   mecab_system_variables,     /* system variables                */
   NULL
