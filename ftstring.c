@@ -19,7 +19,8 @@ static void ftstring_expand(FTSTRING *str, int capacity){
   if(str->buffer == NULL){
     str->buffer = my_malloc(len, MYF(MY_WME));
   }else{
-    str->buffer = my_realloc(str->buffer, len, MYF(MY_WME));
+		char* tmp = my_realloc(str->buffer, len, MYF(MY_WME));
+		if(tmp){ str->buffer = tmp; }
   }
   str->buffer_length = len;
 }
