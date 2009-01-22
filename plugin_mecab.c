@@ -532,12 +532,12 @@ int mecab_file_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *save, st
     *(const char**)save=str;
     
     if(strlen(str)==0) return -1;
-    char* tokens=strtok((char*)str, ",");
-    while(tokens != NULL){
+    char* token=strtok_r((char*)str, ",", NULL);
+    while(token != NULL){
       FILE *fp=fopen(str, "r");
       if(fp==NULL) return -1;
       fclose(fp);
-      tokens=strtok((char*)str, ",");
+      token=strtok_r(NULL, ",", token);
     }
     return 0;
 }
