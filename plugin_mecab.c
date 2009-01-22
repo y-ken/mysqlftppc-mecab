@@ -534,9 +534,9 @@ int mecab_file_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *save, st
     if(strlen(str)==0) return -1;
     char* token=strtok_r((char*)str, ",", NULL);
     while(token != NULL){
-      FILE *fp=fopen(str, "r");
+      FILE *fp=my_fopen(str, O_RDONLY, MYF(0));
       if(fp==NULL) return -1;
-      fclose(fp);
+      my_fclose(fp, MYF(0));
       token=strtok_r(NULL, ",", token);
     }
     return 0;
