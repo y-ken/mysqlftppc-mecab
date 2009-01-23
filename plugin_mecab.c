@@ -19,6 +19,7 @@
 #include <my_sys.h>
 #include <my_list.h>
 #include <plugin.h>
+
 #define HA_FT_MAXBYTELEN 254
 #define FTPPC_MEMORY_ERROR -1
 #define FTPPC_NORMALIZATION_ERROR -2
@@ -76,6 +77,8 @@ static void* ftppc_alloc(struct ftppc_state *state, size_t length){
       tmp->mem_head = my_malloc(sz, MYF(MY_WME));
       tmp->mem_cur  = tmp->mem_head;
       tmp->mem_size = sz;
+      
+      if(!tmp->mem_head){ return NULL; }
       
       state->mem_root = list_cons(tmp, cur);
       cur = state->mem_root;
@@ -429,7 +432,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
           
           if(feed_req_free){ my_free(feed,MYF(0)); }
           my_free(nm, MYF(0));
-          DBUG_RETURN(FTPPC_MEMORY_ERROR);
+          DBUG_RETURN(FTPPC_NORMALIZATION_ERROR);
         }
       }
       if(feed_req_free){ my_free(feed,MYF(0)); }
@@ -488,7 +491,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
             if(sf == SF_QUOTE_END){ // we need mecab
               mecabize_add(param, thead, tlen, cs, feed_req_free|ftstring_internal(pbuffer), &instinfo);
             }else{ // it is already a token
-							trans=add_token(param, thead, tlen, cs, &instinfo, feed_req_free|ftstring_internal(pbuffer), save_transcode, trans, &trans_length);
+              trans=add_token(param, thead, tlen, cs, &instinfo, feed_req_free|ftstring_internal(pbuffer), save_transcode, trans, &trans_length);
             }
           }
           ftstring_reset(pbuffer);
@@ -529,7 +532,9 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
         MYSQL_FTPARSER_BOOLEAN_INFO *tmp = (MYSQL_FTPARSER_BOOLEAN_INFO*)infos->data;
         if(tmp){ my_free(tmp, MYF(0)); }
         list_pop(infos);
-        if(!infos){ break; } // must not reach the base info_may level.
+        if(!infos){
+          DBUG_RETURN(FTPPC_SYNTAX_ERROR);
+        } // must not reach the base info_may level.
         instinfo = *((MYSQL_FTPARSER_BOOLEAN_INFO*)infos->data);
       }
       if(sf == SF_QUOTE_END){
@@ -543,7 +548,9 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
         MYSQL_FTPARSER_BOOLEAN_INFO *tmp = infos->data;
         if(tmp){ my_free(tmp, MYF(0)); }
         list_pop(infos);
-        if(!infos){ break; } // must not reach the base info_may level.
+        if(!infos){
+          DBUG_RETURN(FTPPC_SYNTAX_ERROR);
+        } // must not reach the base info_may level.
         instinfo = *((MYSQL_FTPARSER_BOOLEAN_INFO*)infos->data);
       }
       if(sf == SF_CHAR){
@@ -565,8 +572,8 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
     if(sf==SF_CHAR){
       size_t tlen = ftstring_length(pbuffer);
       char* thead = ftstring_head(pbuffer);
-			trans=add_token(param, thead, tlen, cs, &instinfo, feed_req_free|ftstring_internal(pbuffer), save_transcode, trans, &trans_length);
-		}
+      trans=add_token(param, thead, tlen, cs, &instinfo, feed_req_free|ftstring_internal(pbuffer), save_transcode, trans, &trans_length);
+    }
     if(trans){ my_free(trans, MYF(0)); }
     list_free(infos, 1);
     ftstring_destroy(pbuffer);
@@ -587,7 +594,7 @@ static int mecab_file_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *s
     *(const char**)save=str;
     
     if(strlen(str)==0) return -1;
-		char* sv;
+    char* sv;
     char* token=strtok_r((char*)str, ",", &sv);
     while(token != NULL){
       FILE *fp=my_fopen(str, O_RDONLY, MYF(0));
