@@ -20,6 +20,8 @@
 #include <my_list.h>
 #include <plugin.h>
 #define HA_FT_MAXBYTELEN 254
+#define FTPPC_MEMORY_ERROR -1
+#define FTPPC_NORMALIZATION_ERROR -2
 
 #if !defined(__attribute__) && (defined(__cplusplus) || !defined(__GNUC__)  || __GNUC__ == 2 && __GNUC_MINOR__ < 8)
 #define __attribute__(A)
@@ -303,6 +305,66 @@ static void mecabize_add(MYSQL_FTPARSER_PARAM *param, char *buffer, size_t buffe
   }
 }
 
+
+static char* add_token(MYSQL_FTPARSER_PARAM *param, char* feed, size_t feed_length, CHARSET_INFO *cs, MYSQL_FTPARSER_BOOLEAN_INFO *instinfo, int feed_realloc,
+    int save_transcode, char* trans, size_t *trans_length_pt){
+  int tlen = feed_length;
+  char* thead = feed;
+  if(tlen <= 0){
+    return trans;
+   }
+  int trans_length = *trans_length_pt;
+  if(save_transcode){
+    size_t tmp_length = param->cs->mbmaxlen * cs->cset->numchars(cs, feed, feed+feed_length);
+    if(trans_length < tmp_length){
+      if(trans_length==0){ trans_length=1; }
+      while(trans_length < tmp_length){
+        trans_length = trans_length<<1;
+      }
+      if(trans){
+        char * tmp = my_realloc(trans, trans_length, MYF(MY_WME));
+        if(!tmp){
+          // we should raise warn here.
+          return trans;
+        }
+        trans = tmp;
+      }else{
+        trans = my_malloc(trans_length, MYF(MY_WME));
+        if(!trans){
+          // we should raise warn here.
+          return trans;
+        }
+      }
+    }
+    *trans_length_pt = trans_length;
+    tlen = str_convert(cs, thead, tlen, param->cs, trans, trans_length);
+    thead = trans;
+  }
+  if(feed_realloc || save_transcode){
+    thead = (char*)ftppc_alloc((struct ftppc_state*)param->ftparser_state, tlen);
+    if(thead){
+      memcpy(thead, feed, tlen);
+    }else{
+      // we should raise warn here.
+      return trans;
+    }
+  }
+  if(tlen < HA_FT_MAXBYTELEN){
+    param->mysql_add_word(param, thead, tlen, instinfo);
+/*         
+//         char buf[1024];
+//         memcpy(buf, ftstring_head(pbuffer), tlen);
+//         buf[tlen]='\0';
+//         fputs(buf, stderr);
+//         fputs("\n", stderr);
+//         fflush(stderr); */
+  }else{
+    /* we should raise warn here. */
+  }
+  return trans;
+}
+
+
 static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
 {
   DBUG_ENTER("mecab_parser_parse");
@@ -313,25 +375,27 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
   CHARSET_INFO *cs = param->cs; // charset of feed
   
 #if HAVE_ICU
-  if(strcmp(cs->csname, "utf8")!=0 && mecab_unicode_normalize && strcmp(mecab_unicode_normalize, "OFF")!=0){
-    // convert into UTF-8
-    CHARSET_INFO *uc = get_charset(33,MYF(0)); // we always need to convert to UTF-8 to use mecab.
-    // calculate mblen and malloc.
-    size_t cv_length = uc->mbmaxlen * cs->cset->numchars(cs, feed, feed+feed_length);
-    char* cv = my_malloc(cv_length, MYF(MY_WME));
-    feed_length = str_convert(cs, feed, feed_length, uc, cv, cv_length);
-    feed = cv;
-    feed_req_free = 1;
-    cs = uc;
-  }
-  
   // normalize
   if(mecab_unicode_normalize && strcmp(mecab_unicode_normalize, "OFF")!=0){
-    char* nm;
-    char* t;
-    size_t nm_length = feed_length+32;
+    if(strcmp(cs->csname, "utf8")!=0){
+      // convert into UTF-8
+      CHARSET_INFO *uc = get_charset(33,MYF(0)); // we always need to convert to UTF-8 to use mecab.
+      // calculate mblen and malloc.
+      size_t cv_length = uc->mbmaxlen * cs->cset->numchars(cs, feed, feed+feed_length);
+      char* cv = my_malloc(cv_length, MYF(MY_WME));
+      feed_length = str_convert(cs, feed, feed_length, uc, cv, cv_length);
+      feed = cv;
+      feed_req_free = 1;
+      cs = uc;
+    }
+    
     size_t nm_used=0;
-    nm = my_malloc(nm_length, MYF(MY_WME));
+    size_t nm_length = feed_length+32;
+    char* nm = my_malloc(nm_length, MYF(MY_WME));
+    if(!nm){
+      if(feed_req_free){ my_free(feed,MYF(0)); }
+      DBUG_RETURN(FTPPC_MEMORY_ERROR);
+    }
     int mode = UNORM_NONE;
     int options = 0;
     if(strcmp(mecab_unicode_normalize, "C")==0) mode = UNORM_NFC;
@@ -340,21 +404,39 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
     if(strcmp(mecab_unicode_normalize, "KD")==0) mode = UNORM_NFKD;
     if(strcmp(mecab_unicode_normalize, "FCD")==0) mode = UNORM_FCD;
     if(mecab_unicode_version && strcmp(mecab_unicode_version, "3.2")==0) options |= UNORM_UNICODE_3_2;
-    nm_used = uni_normalize(feed, feed_length, nm, nm_length, mode, options);
-    if(nm_used == 0){
-      nm_length=nm_length*2; // try double size.
-      char* tmp = my_realloc(nm, nm_length, MYF(MY_WME));
-      if(tmp){ nm=tmp; }
+    if(feed_length > 0){
       nm_used = uni_normalize(feed, feed_length, nm, nm_length, mode, options);
       if(nm_used == 0){
         fputs("unicode normalization failed.\n",stderr);
         fflush(stderr);
+        
+        if(feed_req_free){ my_free(feed,MYF(0)); }
+        DBUG_RETURN(FTPPC_NORMALIZATION_ERROR);
+      }else if(nm_used > nm_length){
+        nm_length = nm_used + 8;
+        char *tmp = my_realloc(nm, nm_length, MYF(MY_WME));
+        if(tmp){
+          nm = tmp;
+        }else{
+          if(feed_req_free){ my_free(feed,MYF(0)); }
+          my_free(nm, MYF(0));
+          DBUG_RETURN(FTPPC_MEMORY_ERROR);
+        }
+        nm_used = uni_normalize(feed, feed_length, nm, nm_length, mode, options);
+        if(nm_used == 0){
+          fputs("unicode normalization failed.\n",stderr);
+          fflush(stderr);
+          
+          if(feed_req_free){ my_free(feed,MYF(0)); }
+          my_free(nm, MYF(0));
+          DBUG_RETURN(FTPPC_MEMORY_ERROR);
+        }
       }
+      if(feed_req_free){ my_free(feed,MYF(0)); }
+      feed = nm;
+      feed_length = nm_used;
+      feed_req_free = 1;
     }
-    if(feed_req_free){ my_free(feed, MYF(0)); }
-    feed = nm;
-    feed_length = nm_used;
-    feed_req_free = 1;
   }
 #endif
   
@@ -368,6 +450,13 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
     *info_may = instinfo;
     LIST *infos = NULL;
     list_push(infos, info_may);
+    
+    char*  trans = NULL; // transcoding reusable buffer.
+    size_t trans_length = 0;
+    int save_transcode = 0;
+    if(strcmp(param->cs->csname, cs->csname)!=0){
+      save_transcode=1;
+    }
     
     int context=CTX_CONTROL;
     SEQFLOW sf,sf_prev = SF_BROKEN;
@@ -393,30 +482,13 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
           if(sf == SF_TRUNC){
             instinfo.trunc = 1;
           }
-          int tlen = ftstring_length(pbuffer);
+          size_t tlen = ftstring_length(pbuffer);
           char* thead = ftstring_head(pbuffer);
           if(tlen > 0){
             if(sf == SF_QUOTE_END){ // we need mecab
-              mecabize_add(param, ftstring_head(pbuffer), ftstring_length(pbuffer), cs, feed_req_free|ftstring_internal(pbuffer), &instinfo);
+              mecabize_add(param, thead, tlen, cs, feed_req_free|ftstring_internal(pbuffer), &instinfo);
             }else{ // it is already a token
-              // param->cs
-              char *thead = ftstring_head(pbuffer);
-              size_t tlen = ftstring_length(pbuffer);
-              if(param->cs != cs){ // It was transcoded by unicode normalization. We must allocate the buffer.
-                tlen  = param->cs->mbmaxlen * cs->cset->numchars(cs, ftstring_head(pbuffer), ftstring_head(pbuffer)+ftstring_length(pbuffer));
-                thead = (char*)ftppc_alloc((struct ftppc_state*)param->ftparser_state, tlen);
-                tlen  = str_convert(cs, ftstring_head(pbuffer), ftstring_length(pbuffer), param->cs, thead, tlen);
-              }else{
-                if(ftstring_internal(pbuffer) || feed_req_free){
-                  thead = (char*)ftppc_alloc((struct ftppc_state*)param->ftparser_state, tlen);
-                  memcpy(thead, ftstring_head(pbuffer), tlen);
-                }
-              }
-              if(tlen > 0 && tlen < HA_FT_MAXBYTELEN){
-                param->mysql_add_word(param, thead, tlen, &instinfo);
-              }else{
-                // XXX: too long token. we should raise warn here.
-              }
+							trans=add_token(param, thead, tlen, cs, &instinfo, feed_req_free|ftstring_internal(pbuffer), save_transcode, trans, &trans_length);
             }
           }
           ftstring_reset(pbuffer);
@@ -491,28 +563,11 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
       sf_prev = sf;
     }
     if(sf==SF_CHAR){
-      // param->cs
-      char *thead = ftstring_head(pbuffer);
       size_t tlen = ftstring_length(pbuffer);
-      if(param->cs != cs){ // It was transcoded by unicode normalization. We must allocate the buffer.
-        tlen  = param->cs->mbmaxlen * cs->cset->numchars(cs, ftstring_head(pbuffer), ftstring_head(pbuffer)+ftstring_length(pbuffer));
-        thead = (char*)ftppc_alloc((struct ftppc_state*)param->ftparser_state, tlen);
-        tlen  = str_convert(cs, ftstring_head(pbuffer), ftstring_length(pbuffer), param->cs, thead, tlen);
-      }else{
-        if(ftstring_internal(pbuffer) || feed_req_free){
-          thead = (char*)ftppc_alloc((struct ftppc_state*)param->ftparser_state, tlen);
-          memcpy(thead, ftstring_head(pbuffer), tlen);
-        }
-      }
-      if(tlen > 0 && tlen < HA_FT_MAXBYTELEN){
-        param->mysql_add_word(param, thead, tlen, &instinfo);
-      }else{
-        // XXX: too long token. we should raise warn here.
-      }
-// XXX: Here is not in the loop so we can omit reset.
-//      ftstring_reset(pbuffer);
-//      instinfo = *((MYSQL_FTPARSER_BOOLEAN_INFO *)infos->data);
-    }
+      char* thead = ftstring_head(pbuffer);
+			trans=add_token(param, thead, tlen, cs, &instinfo, feed_req_free|ftstring_internal(pbuffer), save_transcode, trans, &trans_length);
+		}
+    if(trans){ my_free(trans, MYF(0)); }
     list_free(infos, 1);
     ftstring_destroy(pbuffer);
   }else{
@@ -522,7 +577,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
   DBUG_RETURN(0);
 }
 
-int mecab_file_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *save, struct st_mysql_value *value){
+static int mecab_file_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *save, struct st_mysql_value *value){
     char buf[255];
     int len=255;
     const char *str;
@@ -532,17 +587,18 @@ int mecab_file_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *save, st
     *(const char**)save=str;
     
     if(strlen(str)==0) return -1;
-    char* token=strtok_r((char*)str, ",", NULL);
+		char* sv;
+    char* token=strtok_r((char*)str, ",", &sv);
     while(token != NULL){
       FILE *fp=my_fopen(str, O_RDONLY, MYF(0));
       if(fp==NULL) return -1;
       my_fclose(fp, MYF(0));
-      token=strtok_r(NULL, ",", token);
+      token=strtok_r(NULL, ",", &sv);
     }
     return 0;
 }
 
-int mecab_unicode_version_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *save, struct st_mysql_value *value){
+static int mecab_unicode_version_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *save, struct st_mysql_value *value){
     char buf[8];
     int len=8;
     const char *str;
@@ -559,7 +615,7 @@ int mecab_unicode_version_check(MYSQL_THD thd, struct st_mysql_sys_var *var, voi
     return -1;
 }
 
-int mecab_unicode_normalize_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *save, struct st_mysql_value *value){
+static int mecab_unicode_normalize_check(MYSQL_THD thd, struct st_mysql_sys_var *var, void *save, struct st_mysql_value *value){
     char buf[4];
     int len=4;
     const char *str;
@@ -585,7 +641,7 @@ int mecab_unicode_normalize_check(MYSQL_THD thd, struct st_mysql_sys_var *var, v
 
 static struct st_mysql_show_var mecab_status[]=
 {
-  {"Mecab_info", (char *)mecab_info, SHOW_CHAR},
+  {"Mecab_info", mecab_info, SHOW_CHAR},
   {0,0,0}
 };
 
