@@ -23,6 +23,7 @@
 #define HA_FT_MAXBYTELEN 254
 #define FTPPC_MEMORY_ERROR -1
 #define FTPPC_NORMALIZATION_ERROR -2
+#define FTPPC_SYNTAX_ERROR -3
 
 #if !defined(__attribute__) && (defined(__cplusplus) || !defined(__GNUC__)  || __GNUC__ == 2 && __GNUC_MINOR__ < 8)
 #define __attribute__(A)
@@ -194,10 +195,13 @@ static int mecab_parser_deinit(MYSQL_FTPARSER_PARAM *param __attribute__((unused
 }
 
 static size_t str_convert(CHARSET_INFO *cs, char *from, size_t from_length,
-                          CHARSET_INFO *uc, char *to,   size_t to_length){
+                          CHARSET_INFO *uc, char *to,   size_t to_length,
+                          size_t *numchars){
   char *rpos, *rend, *wpos, *wend;
   my_wc_t wc;
+  char* tmp;
   
+  if(numchars){ *numchars = 0; }
   rpos = from;
   rend = from + from_length;
   wpos = to;
@@ -213,14 +217,21 @@ static size_t str_convert(CHARSET_INFO *cs, char *from, size_t from_length,
     }else{
       break;
     }
-    cnvres = uc->cset->wc_mb(uc, wc, (uchar*)wpos, (uchar*)wend);
+    if(!to){
+      if(!tmp){ tmp=my_malloc(uc->mbmaxlen, MYF(MY_WME)); }
+      cnvres = uc->cset->wc_mb(uc, wc, (uchar*)tmp, (uchar*)(tmp+uc->mbmaxlen));
+    }else{
+      cnvres = uc->cset->wc_mb(uc, wc, (uchar*)wpos, (uchar*)wend);
+    }
     if(cnvres > 0){
-      wpos += cnvres;
+      wpos += (size_t)cnvres;
     }else{
       break;
     }
+    if(numchars){ *numchars++; }
   }
-  return (size_t)(wpos - to);
+  if(tmp){ my_free(tmp, MYF(0)); }
+  return (size_t)(wpos-to);
 }
 
 /**
@@ -242,9 +253,10 @@ static void mecabize_add(MYSQL_FTPARSER_PARAM *param, char *buffer, size_t buffe
   int    feed_req_free = 0;
   CHARSET_INFO *uc= (CHARSET_INFO*)state->engine_charset;
   if(strcmp(cs->csname, uc->csname)!=0){
-    feed_length = uc->mbmaxlen * cs->cset->numchars(cs, buffer, buffer+buffer_length);
+//    feed_length = uc->mbmaxlen * cs->cset->numchars(cs, buffer, buffer+buffer_length);
+    feed_length = str_convert(cs, buffer, buffer_length, uc, NULL, 0, NULL);
     feed = (char*)my_malloc(feed_length, MYF(MY_WME));
-    feed_length = str_convert(cs, buffer, buffer_length, uc, feed, feed_length);
+    feed_length = str_convert(cs, buffer, buffer_length, uc, feed, feed_length, NULL);
     feed_req_free = 1;
   }
   
@@ -280,7 +292,7 @@ static void mecabize_add(MYSQL_FTPARSER_PARAM *param, char *buffer, size_t buffe
           char *tmp=(char*)my_realloc(wbuffer, wbuffer_length, MYF(MY_WME));
           if(tmp){ wbuffer = tmp; }
         }
-        tlen = str_convert(uc, (char*)node->surface, node->length, cs, wbuffer, wbuffer_length);
+        tlen = str_convert(uc, (char*)node->surface, node->length, cs, wbuffer, wbuffer_length, NULL);
         thead = (char*)ftppc_alloc((struct ftppc_state*)param->ftparser_state, tlen);
         memcpy(thead, wbuffer, tlen);
       }else{
@@ -340,7 +352,7 @@ static char* add_token(MYSQL_FTPARSER_PARAM *param, char* feed, size_t feed_leng
       }
     }
     *trans_length_pt = trans_length;
-    tlen = str_convert(cs, thead, tlen, param->cs, trans, trans_length);
+    tlen = str_convert(cs, thead, tlen, param->cs, trans, trans_length, NULL);
     thead = trans;
   }
   if(feed_realloc || save_transcode){
@@ -384,9 +396,10 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
       // convert into UTF-8
       CHARSET_INFO *uc = get_charset(33,MYF(0)); // we always need to convert to UTF-8 to use mecab.
       // calculate mblen and malloc.
-      size_t cv_length = uc->mbmaxlen * cs->cset->numchars(cs, feed, feed+feed_length);
+//      size_t cv_length = uc->mbmaxlen * cs->cset->numchars(cs, feed, feed+feed_length);
+      size_t cv_length = str_convert(cs, feed, feed_length, uc, NULL, 0, NULL);
       char* cv = my_malloc(cv_length, MYF(MY_WME));
-      feed_length = str_convert(cs, feed, feed_length, uc, cv, cv_length);
+      feed_length = str_convert(cs, feed, feed_length, uc, cv, cv_length, NULL);
       feed = cv;
       feed_req_free = 1;
       cs = uc;
