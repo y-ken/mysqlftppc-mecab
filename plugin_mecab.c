@@ -155,9 +155,9 @@ static int mecab_parser_init(MYSQL_FTPARSER_PARAM *param __attribute__((unused))
   const mecab_dictionary_info_t *dic = mecab_dictionary_info(mecab);
   /* We only have to check the first dictionary(system dictionary)  
      because dic->next(user dictionary) will have the same charset. */
-  CHARSET_INFO* cs = NULL; // MySQL utf8
+  CHARSET_INFO* cs = NULL;
   if(strcasecmp(dic->charset, "utf8") || strcasecmp(dic->charset, "utf_8") || strcasecmp(dic->charset, "utf-8")){
-    cs=get_charset(33, MYF(0));
+    cs=get_charset(33, MYF(0)); // MySQL utf8
   }else if(strcasecmp(dic->charset, "euc") || strcasecmp(dic->charset, "euc_jp") || strcasecmp(dic->charset, "euc-jp")){
     cs=get_charset(98, MYF(0)); // MySQL eucjpms
     if(!cs){
@@ -171,7 +171,8 @@ static int mecab_parser_init(MYSQL_FTPARSER_PARAM *param __attribute__((unused))
     }
   }else if(strcasecmp(dic->charset, "ascii")){
     cs=get_charset(65, MYF(0)); // MySQL ascii
-  }else{
+  }
+  if(!cs){
     cs=get_charset(33, MYF(0)); // MySQL utf8
   }
   
@@ -199,7 +200,7 @@ static size_t str_convert(CHARSET_INFO *cs, char *from, size_t from_length,
                           size_t *numchars){
   char *rpos, *rend, *wpos, *wend;
   my_wc_t wc;
-  char* tmp;
+  char* tmp = NULL;
   
   if(numchars){ *numchars = 0; }
   rpos = from;
@@ -269,6 +270,8 @@ static void mecabize_add(MYSQL_FTPARSER_PARAM *param, char *buffer, size_t buffe
   if(!node){
     fputs(mecab_strerror(mecab), stderr);
     fflush(stderr);
+    
+    if(feed_req_free){ my_free(feed, MYF(0)); }
     return; // mecab might not have UTF-8 dictionary in this case.
   }
   
@@ -315,9 +318,7 @@ static void mecabize_add(MYSQL_FTPARSER_PARAM *param, char *buffer, size_t buffe
   if(wbuffer){
     my_free(wbuffer, MYF(0));
   }
-  if(feed_req_free){
-    my_free(feed, MYF(0));
-  }
+  if(feed_req_free){ my_free(feed, MYF(0)); }
 }
 
 
