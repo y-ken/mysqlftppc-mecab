@@ -715,7 +715,7 @@ mysql_declare_plugin(ft_mecab)
   PLUGIN_LICENSE_BSD,
   mecab_parser_plugin_init,  /* init function (when loaded)     */
   mecab_parser_plugin_deinit,/* deinit function (when unloaded) */
-  0x0016,                     /* version                         */
+  0x0106,                     /* version                         */
   mecab_status,               /* status variables                */
   mecab_system_variables,     /* system variables                */
   NULL
