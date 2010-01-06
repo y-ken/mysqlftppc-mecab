@@ -1,6 +1,7 @@
-AC_INIT(plugin_mecab, 1.0)
+AC_INIT(plugin_mecab, 2.0)
 AM_INIT_AUTOMAKE
 AC_DISABLE_STATIC
+AC_PROG_CXX
 AC_PROG_LIBTOOL
 
 AC_ARG_WITH([mysql-config],
@@ -31,6 +32,7 @@ AS_IF(
  [CPPFLAGS="$CPPFLAGS `$with_icu_config --cppflags`"
   LDFLAGS="$LDFLAGS `$with_icu_config --ldflags`"
   CFLAGS="$CFLAGS -DHAVE_ICU"
+  CXXFLAGS="$CXXFLAGS -DHAVE_ICU"
   AC_MSG_RESULT(yes)],
  [AC_MSG_RESULT(no. icu-config not found. Please specify --with-icu-config.)])
 
