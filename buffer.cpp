@@ -37,8 +37,8 @@ void FtMemBuffer::reset(){
 }
 
 char* FtMemBuffer::getBuffer(size_t *length, size_t *capacity){
-	*length = cursor;
-	*capacity = bufferLength;
+	if(length) *length = cursor;
+	if(capacity) *capacity = bufferLength;
 	return buffer;
 }
 
