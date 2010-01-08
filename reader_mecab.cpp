@@ -81,6 +81,7 @@ void MecabReader::reset(){
 	node = NULL;
 	if(output){
 		delete output;
+		output = NULL;
 	}
-	output = NULL;
+	wc_sp = false;
 }

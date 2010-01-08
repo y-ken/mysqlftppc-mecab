@@ -15,9 +15,12 @@
 #define __attribute__(A)
 #endif
 
-static void* icu_malloc(const void* context, size_t size){ return my_malloc(size,MYF(MY_WME)); }
-static void* icu_realloc(const void* context, void* ptr, size_t size){ return my_realloc(ptr,size,MYF(MY_WME)); }
 static void  icu_free(const void* context, void *ptr){ my_free(ptr,MYF(0)); }
+static void* icu_malloc(const void* context, size_t size){ return my_malloc(size,MYF(MY_WME)); }
+static void* icu_realloc(const void* context, void* ptr, size_t size){
+	if(ptr!=NULL) return my_realloc(ptr,size,MYF(MY_WME));
+	return my_malloc(size,MYF(MY_WME));
+}
 
 static int mecab_parser_plugin_init(void *arg __attribute__((unused))){
 	strcat(mecab_info, "with mecab ");
@@ -124,6 +127,7 @@ static void pooled_add_word(FtMemBuffer *membuffer, FtMemPool *pool, MYSQL_FTPAR
 }
 
 static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param){
+	DBUG_ENTER("mecab_parser_parse");
 //fprintf(stderr,"input:  ");
 //dumpChars(const_cast<char*>(param->doc), (size_t)param->length);
 	FtMecabState *state = (FtMecabState*)(param->ftparser_state);
@@ -146,7 +150,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param){
 		reader = &mecabReader;
 		
 #if HAVE_ICU
-		// pre-normalizer
+		// post-normalizer
 		FtUnicodeNormalizerReader *normReader = NULL;
 		if(state->normalization != FT_NORM_OFF){
 			if(state->normalization == FT_NORM_NFC){
@@ -264,7 +268,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param){
 		}
 #endif
 	}
-	return 0;
+	DBUG_RETURN(0);
 }
 
 FtMecabState::FtMecabState(){
