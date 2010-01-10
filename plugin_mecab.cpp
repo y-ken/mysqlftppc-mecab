@@ -113,6 +113,11 @@ static void pooled_add_word(FtMemBuffer *membuffer, FtMemPool *pool, MYSQL_FTPAR
 	size_t capacity;
 	char *binary = membuffer->getBuffer(&length, &capacity);
 	
+// 	char buf[1024];
+// 	memcpy(buf,binary,length);
+// 	buf[length]='\0';
+// 	fprintf(stderr,"add %s (%d)\n",buf, length); fflush(stderr);
+	
 	if(length > 0){
 		info->type = FT_TOKEN_WORD;
 		const char *save = pool->findPool(param->doc, param->length, const_cast<char*>(binary), length);
@@ -252,6 +257,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param){
 		my_wc_t wc;
 		int meta;
 		while(reader->readOne(&wc, &meta)){
+//			fprintf(stderr,"plugin_got %lu %d\n", wc, meta); fflush(stderr);
 			if(meta==FT_CHAR_NORM){
 				memBuffer.append(wc);
 			}else{

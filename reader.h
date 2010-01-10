@@ -71,6 +71,16 @@ public:
 	void setLineStyle(enum FtLineStyle style);
 };
 
+class FtBreakReader : public FtCharReader {
+	FtCharReader *feeder;
+	CHARSET_INFO *cs;
+public:
+	FtBreakReader(FtCharReader *feeder, CHARSET_INFO *cs);
+	~FtBreakReader();
+	bool readOne(my_wc_t *wc, int *meta);
+	void reset();
+};
+
 class FtBoolReader : public FtCharReader {
 	FtCharReader *src;
 	bool strhead;

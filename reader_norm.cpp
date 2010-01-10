@@ -1,3 +1,4 @@
+#include <cstring>
 #include "reader_norm.h"
 
 #if HAVE_ICU
@@ -17,6 +18,9 @@ WcIterator::WcIterator(FtCharReader *internal, int32_t internalLength, int32_t i
 	textLength = internalLength;
 	textLength32 = internalLength32;
 	end = textLength;
+	
+	this->reset();
+	this->mirror();
 }
 
 WcIterator::WcIterator(FtCharReader *internal){
@@ -33,15 +37,16 @@ WcIterator::WcIterator(FtCharReader *internal){
 	pos = begin = 0;
 	textLength = 0;
 	textLength32 = 0;
-	my_wc_t wc;
-	int meta;
 	while(!eoc){
 		this->mirror();
 		textLength += cache->length();
 		textLength32 += cache->countChar32(0,cache->length());
 	}
-	this->reset();
 	end = textLength;
+	
+	//fprintf(stderr, "textLength %d textLength32 %d\n", textLength, textLength32); fflush(stderr);
+	this->reset();
+	this->mirror();
 }
 
 WcIterator::~WcIterator(){
@@ -87,7 +92,7 @@ UChar32 WcIterator::next32PostInc(){
 UBool WcIterator::hasNext(){
 //	fprintf(stderr,"WcIterator::hasNext\n"); fflush(stderr);
 	UBool ret = cacheIterator->hasNext();
-	if(!ret && eoc==false){
+	if(ret!=TRUE && eoc==false){
 		this->mirror();
 		ret = cacheIterator->hasNext();
 	}
@@ -306,7 +311,7 @@ int32_t WcIterator::move(int32_t delta, EOrigin origin){
 			}
 			cacheIterator->move(delta-formerLength, kStart);
 		}else{
-//			fprintf(stderr, "invalid index can't be nagative %d", delta); fflush(stderr);
+			fprintf(stderr, "invalid index can't be nagative %d", delta); fflush(stderr);
 			return -1;
 		}
 		pos = formerLength + cacheIterator->getIndex();
@@ -316,14 +321,14 @@ int32_t WcIterator::move(int32_t delta, EOrigin origin){
 		if(target>=0 && target<end){
 			return this->move(target, kStart);
 		}else{
-//			fprintf(stderr, "invalid kCurrent index target %d %d\n", target, formerLength); fflush(stderr);
+			fprintf(stderr, "invalid kCurrent index target %d %d\n", target, formerLength); fflush(stderr);
 		}
 	}else if(origin==kEnd){
 		int32_t target = end + delta;
 		if(target>=0 && target<end){
 			return this->move(target, kStart);
 		}else{
-//			fprintf(stderr, "invalid kEnd index target %d\n", target); fflush(stderr);
+			fprintf(stderr, "invalid kEnd index target %d\n", target); fflush(stderr);
 		}
 	}
 	return -1;
@@ -364,7 +369,6 @@ int32_t WcIterator::move32(int32_t delta, EOrigin origin){
 
 void WcIterator::getText(UnicodeString &result){
 //	fprintf(stderr,"WcIterator::getText\n"); fflush(stderr);
-	
 	int32_t target = this->move(0,kStart);
 	this->reset();
 	while(eoc!=true){
@@ -422,6 +426,81 @@ void FtUnicodeNormalizerReader::reset(){
 
 void FtUnicodeNormalizerReader::setOption(int32_t option, UBool value){
 	normalizer->setOption(option,value);
+}
+
+
+FtUnicodeBreakReader::FtUnicodeBreakReader(FtCharReader *feeder, const char* locale){
+	wc_sp = false;
+	feeder_feed = true;
+	breaker = NULL;
+	UErrorCode status = U_ZERO_ERROR;
+	
+	int32_t count = 0;
+	const Locale *locales = Locale::getAvailableLocales(count);
+	int32_t i=0;
+	for(i=0; i<count; i++){
+		if(strcasecmp(locales[i].getName(), locale)==0){
+			breaker = BreakIterator::createWordInstance(locales[i], status);
+			break;
+		}
+	}
+	if(breaker){
+		wrapper = new WcIterator(feeder);
+		breaker->adoptText(wrapper);
+		
+//		int32_t pos = breaker->first();
+//		fprintf(stderr, "breakIterator %d\n", pos); fflush(stderr);
+//		while((pos=breaker->next()) != BreakIterator::DONE){
+//			fprintf(stderr, "breakIterator %d\n", pos); fflush(stderr);
+//		}
+		
+		wrapper->setIndex(0);
+	}else{
+		fprintf(stderr,"Specified locale not available.");
+	}
+}
+
+FtUnicodeBreakReader::~FtUnicodeBreakReader(){
+	if(breaker) delete breaker;
+}
+
+bool FtUnicodeBreakReader::readOne(my_wc_t *wc, int *meta){
+	if(!feeder_feed){
+		return false;
+	}
+	if(wc_sp){
+		// already emit a separator
+	}else{
+		int32_t bindex = wrapper->getIndex();
+		if(breaker->isBoundary(bindex)){
+			wrapper->setIndex(bindex);
+			wc_sp = true;
+			*wc = FT_EOS;
+			*meta = FT_CHAR_CTRL;
+			return true;
+		}
+		wrapper->setIndex(bindex);
+	}
+	UChar32 c = wrapper->next32PostInc();
+	wc_sp = false;
+	
+	*wc = (my_wc_t)c;
+	if(c==CharacterIterator::DONE){
+		if(wrapper->getIndex() < wrapper->endIndex()){
+			*meta = wrapper->getPreviousControlMeta();
+		}else{
+			*meta = FT_CHAR_CTRL;
+			feeder_feed = false;
+		}
+	}else{
+		*meta = FT_CHAR_NORM;
+	}
+	return true;
+}
+
+void FtUnicodeBreakReader::reset(){
+	wrapper->reset();
+	feeder_feed = true;
 }
 
 #endif

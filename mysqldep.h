@@ -1,5 +1,7 @@
 #ifndef _MYSQLDEP
 #ifdef __cplusplus
+#include <string>
+#include <algorithm>
 extern "C" {
 #endif
 

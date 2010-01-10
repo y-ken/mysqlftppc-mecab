@@ -13,6 +13,7 @@ enum FtNormalization {
 #include <unicode/chariter.h>
 #include <unicode/normlzr.h>
 #include <unicode/schriter.h>
+#include <unicode/brkiter.h>
 
 // initial capacity may be the other value.
 #define FT_CODEPOINTS_CAPACITY 32
@@ -80,6 +81,18 @@ public:
 	void reset();
 	//
 	void setOption(int32_t option, UBool value);
+};
+
+class FtUnicodeBreakReader : public FtCharReader {
+	WcIterator *wrapper;
+	BreakIterator *breaker;
+	bool feeder_feed;
+	bool wc_sp;
+public:
+	FtUnicodeBreakReader(FtCharReader *feeder, const char* locale);
+	~FtUnicodeBreakReader();
+	bool readOne(my_wc_t *wc, int *meta);
+	void reset();
 };
 
 #endif

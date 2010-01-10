@@ -115,6 +115,36 @@ void FtLineReader::setLineStyle(enum FtLineStyle style){
 }
 
 
+//////////////// FtBreakReader
+#include <m_ctype.h>
+FtBreakReader::FtBreakReader(FtCharReader *feeder, CHARSET_INFO *cs){
+	this->feeder = feeder;
+	this->cs = cs;
+}
+
+FtBreakReader::~FtBreakReader(){}
+
+bool FtBreakReader::readOne(my_wc_t *wc, int *meta){
+	if(feeder->readOne(wc, meta)){
+		my_wc_t wwc = *wc;
+		if(*meta == FT_CHAR_NORM && wwc!='_'){
+			int ctype = my_uni_ctype[wwc>>8].ctype ? my_uni_ctype[wwc>>8].ctype[wwc&0xFF] : my_uni_ctype[wwc>>8].pctype;
+			if(ctype & (_MY_U | _MY_L | _MY_NMR)){
+				// FT_CHAR_NORM
+			}else{
+				*meta = FT_CHAR_CTRL;
+			}
+		}
+		return true;
+	}
+	return false;
+}
+
+void FtBreakReader::reset(){
+	feeder->reset();
+}
+
+
 //////////////// FtBoolReader
 FtBoolReader::FtBoolReader(FtCharReader *feed){
 	strhead = true;

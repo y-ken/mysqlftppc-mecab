@@ -30,6 +30,12 @@ bool MecabReader::readOne(my_wc_t *wc, int *meta){
 	
 	if(node && node->next){
 		node = node->next;
+		if(node->stat != MECAB_BOS_NODE && node->stat != MECAB_EOS_NODE){
+			output = new FtMemReader(node->surface, node->length, this->dictionary_charset);
+		}
+		*wc = FT_EOS;
+		*meta = FT_CHAR_CTRL;
+		return true;
 	}else{
 		if(wc_sp){
 			wc_sp = false;
@@ -65,11 +71,7 @@ bool MecabReader::readOne(my_wc_t *wc, int *meta){
 		}
 	}
 	if(node){
-		if(node->stat == MECAB_BOS_NODE || node->stat == MECAB_EOS_NODE){
-			*wc = FT_EOS;
-			*meta = FT_CHAR_CTRL;
-			return true;
-		}else{
+		if(node->stat != MECAB_BOS_NODE && node->stat != MECAB_EOS_NODE){
 			output = new FtMemReader(node->surface, node->length, this->dictionary_charset);
 		}
 	}
