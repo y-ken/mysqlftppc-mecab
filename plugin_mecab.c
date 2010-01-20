@@ -266,7 +266,7 @@ static void mecabize_add(MYSQL_FTPARSER_PARAM *param, char *buffer, size_t buffe
     save_transcode=1;
   }
   
-  mecab_node_t *node = (mecab_node_t*)mecab_sparse_tonode2(mecab, buffer, buffer_length);
+  mecab_node_t *node = (mecab_node_t*)mecab_sparse_tonode2(mecab, feed, feed_length);
   if(!node){
     fputs(mecab_strerror(mecab), stderr);
     fflush(stderr);
