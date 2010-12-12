@@ -1,4 +1,4 @@
-AC_INIT(plugin_mecab, 1.0)
+AC_INIT(plugin_mecab, 1.6.1)
 AM_INIT_AUTOMAKE
 AC_DISABLE_STATIC
 AC_PROG_LIBTOOL
