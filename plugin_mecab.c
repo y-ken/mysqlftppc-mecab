@@ -156,21 +156,26 @@ static int mecab_parser_init(MYSQL_FTPARSER_PARAM *param __attribute__((unused))
   /* We only have to check the first dictionary(system dictionary)  
      because dic->next(user dictionary) will have the same charset. */
   CHARSET_INFO* cs = NULL;
-  if(strcasecmp(dic->charset, "utf8") || strcasecmp(dic->charset, "utf_8") || strcasecmp(dic->charset, "utf-8")){
-    cs=get_charset(33, MYF(0)); // MySQL utf8
-  }else if(strcasecmp(dic->charset, "euc") || strcasecmp(dic->charset, "euc_jp") || strcasecmp(dic->charset, "euc-jp")){
-    cs=get_charset(98, MYF(0)); // MySQL eucjpms
-    if(!cs){
-      cs=get_charset(91, MYF(0));  // MySQL ujis
+  if(dic){
+    if(strcasecmp(dic->charset, "utf8") || strcasecmp(dic->charset, "utf_8") || strcasecmp(dic->charset, "utf-8")){
+      cs=get_charset(33, MYF(0)); // MySQL utf8
+    }else if(strcasecmp(dic->charset, "euc") || strcasecmp(dic->charset, "euc_jp") || strcasecmp(dic->charset, "euc-jp")){
+      cs=get_charset(98, MYF(0)); // MySQL eucjpms
+      if(!cs){
+        cs=get_charset(91, MYF(0));  // MySQL ujis
+      }
+    }else if(strcasecmp(dic->charset, "sjis") || strcasecmp(dic->charset, "shift-jis") 
+        || strcasecmp(dic->charset, "shift_jis") || strcasecmp(dic->charset, "cp932")){
+      cs=get_charset(96, MYF(0)); // MySQL cp932
+      if(!cs){
+        cs=get_charset(88, MYF(0)); // MySQL sjis
+      }
+    }else if(strcasecmp(dic->charset, "ascii")){
+      cs=get_charset(65, MYF(0)); // MySQL ascii
     }
-  }else if(strcasecmp(dic->charset, "sjis") || strcasecmp(dic->charset, "shift-jis") 
-      || strcasecmp(dic->charset, "shift_jis") || strcasecmp(dic->charset, "cp932")){
-    cs=get_charset(96, MYF(0)); // MySQL cp932
-    if(!cs){
-      cs=get_charset(88, MYF(0)); // MySQL sjis
-    }
-  }else if(strcasecmp(dic->charset, "ascii")){
-    cs=get_charset(65, MYF(0)); // MySQL ascii
+  }else{
+      fputs("dictionary not found", stderr);
+      fflush(stderr);
   }
   if(!cs){
     cs=get_charset(33, MYF(0)); // MySQL utf8
@@ -266,7 +271,8 @@ static void mecabize_add(MYSQL_FTPARSER_PARAM *param, char *buffer, size_t buffe
     save_transcode=1;
   }
   
-  mecab_node_t *node = (mecab_node_t*)mecab_sparse_tonode2(mecab, feed, feed_length);
+  mecab_node_t *node = NULL;
+  if(feed && feed_length>0) node = (mecab_node_t*)mecab_sparse_tonode2(mecab, feed, feed_length);
   if(!node){
     fputs(mecab_strerror(mecab), stderr);
     fflush(stderr);
