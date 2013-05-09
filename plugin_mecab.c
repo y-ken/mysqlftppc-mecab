@@ -37,7 +37,7 @@ static char* mecab_userdic;
 
 static void* icu_malloc(const void* context, size_t size){ return my_malloc(size,MYF(MY_WME)); }
 static void* icu_realloc(const void* context, void* ptr, size_t size){ return my_realloc(ptr,size,MYF(MY_WME)); }
-static void  icu_free(const void* context, void *ptr){ my_free(ptr,MYF(0)); }
+static void  icu_free(const void* context, void *ptr){ my_free(ptr); }
 
 
 /** ftstate */
@@ -236,7 +236,7 @@ static size_t str_convert(CHARSET_INFO *cs, char *from, size_t from_length,
     }
     if(numchars){ *numchars++; }
   }
-  if(tmp){ my_free(tmp, MYF(0)); }
+  if(tmp){ my_free(tmp); }
   return (size_t)(wpos-to);
 }
 
@@ -277,7 +277,7 @@ static void mecabize_add(MYSQL_FTPARSER_PARAM *param, char *buffer, size_t buffe
     fputs(mecab_strerror(mecab), stderr);
     fflush(stderr);
     
-    if(feed_req_free){ my_free(feed, MYF(0)); }
+    if(feed_req_free){ my_free(feed); }
     return; // mecab might not have UTF-8 dictionary in this case.
   }
   
@@ -322,9 +322,9 @@ static void mecabize_add(MYSQL_FTPARSER_PARAM *param, char *buffer, size_t buffe
     node = node->next;
   }
   if(wbuffer){
-    my_free(wbuffer, MYF(0));
+    my_free(wbuffer);
   }
-  if(feed_req_free){ my_free(feed, MYF(0)); }
+  if(feed_req_free){ my_free(feed); }
 }
 
 
@@ -416,7 +416,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
     size_t nm_length = feed_length+32;
     char* nm = my_malloc(nm_length, MYF(MY_WME));
     if(!nm){
-      if(feed_req_free){ my_free(feed,MYF(0)); }
+      if(feed_req_free){ my_free(feed); }
       DBUG_RETURN(FTPPC_MEMORY_ERROR);
     }
     int mode = UNORM_NONE;
@@ -433,7 +433,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
         fputs("unicode normalization failed.\n",stderr);
         fflush(stderr);
         
-        if(feed_req_free){ my_free(feed,MYF(0)); }
+        if(feed_req_free){ my_free(feed); }
         DBUG_RETURN(FTPPC_NORMALIZATION_ERROR);
       }else if(nm_used > nm_length){
         nm_length = nm_used + 8;
@@ -441,8 +441,8 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
         if(tmp){
           nm = tmp;
         }else{
-          if(feed_req_free){ my_free(feed,MYF(0)); }
-          my_free(nm, MYF(0));
+          if(feed_req_free){ my_free(feed); }
+          my_free(nm);
           DBUG_RETURN(FTPPC_MEMORY_ERROR);
         }
         nm_used = uni_normalize(feed, feed_length, nm, nm_length, mode, options);
@@ -450,12 +450,12 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
           fputs("unicode normalization failed.\n",stderr);
           fflush(stderr);
           
-          if(feed_req_free){ my_free(feed,MYF(0)); }
-          my_free(nm, MYF(0));
+          if(feed_req_free){ my_free(feed); }
+          my_free(nm);
           DBUG_RETURN(FTPPC_NORMALIZATION_ERROR);
         }
       }
-      if(feed_req_free){ my_free(feed,MYF(0)); }
+      if(feed_req_free){ my_free(feed); }
       feed = nm;
       feed_length = nm_used;
       feed_req_free = 1;
@@ -550,7 +550,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
         param->mysql_add_word(param, pos, 0, &instinfo); // push RIGHT_PAREN token
         
         MYSQL_FTPARSER_BOOLEAN_INFO *tmp = (MYSQL_FTPARSER_BOOLEAN_INFO*)infos->data;
-        if(tmp){ my_free(tmp, MYF(0)); }
+        if(tmp){ my_free(tmp); }
         list_pop(infos);
         if(!infos){
           DBUG_RETURN(FTPPC_SYNTAX_ERROR);
@@ -566,7 +566,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
         param->mysql_add_word(param, pos, 0, &instinfo); // push RIGHT_PAREN token
         
         MYSQL_FTPARSER_BOOLEAN_INFO *tmp = infos->data;
-        if(tmp){ my_free(tmp, MYF(0)); }
+        if(tmp){ my_free(tmp); }
         list_pop(infos);
         if(!infos){
           DBUG_RETURN(FTPPC_SYNTAX_ERROR);
@@ -594,7 +594,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param)
       char* thead = ftstring_head(pbuffer);
       trans=add_token(param, thead, tlen, cs, &instinfo, feed_req_free|ftstring_internal(pbuffer), save_transcode, trans, &trans_length);
     }
-    if(trans){ my_free(trans, MYF(0)); }
+    if(trans){ my_free(trans); }
     list_free(infos, 1);
     ftstring_destroy(pbuffer);
   }else{
