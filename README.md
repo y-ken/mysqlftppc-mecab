@@ -1,15 +1,34 @@
 # MySQL full-text parser plugin - mecab
 
-## What's this?
+This plugin is adding parser of mecab tokenizer for MyISAM Fulltext Index.  
+You can query in natural langauge mode or in boolean mode.
 
-It's mysqlftppc fork repository as mysqlftppc-mecab-1.6.1.  
-It has get compatible with MySQL-5.5 and MySQL-5.6
+## Summary
+
+It's fork repository of mysqlftppc (MySQL Full-Text Parser Plugin Collection) which has developed by hiroaki-kawai.  
+This repository add a feature of geting compatible with `MySQL-5.5` and `MySQL-5.6`.
+
+The family of mysqlftppc are below.
+
+* https://github.com/y-ken/mysqlftppc-bigram
+* https://github.com/y-ken/mysqlftppc-mecab
+* https://github.com/y-ken/mysqlftppc-snowball
+* https://github.com/y-ken/mysqlftppc-space
+* https://github.com/y-ken/mysqlftppc-suffix
 
 ## Usage
 
-It is a example to install mysqlftppc for CentOS-6.x.
+It is a example to install mysqlftppc-mecab for CentOS-6.x.
 
-#### install mecab
+#### install dependency libraries
+
+install ICU to normalize unicode sentences.
+
+```sh
+$ sudo yum install libicu libicu-devel
+```
+
+install mecab with IPA dictionary.
 
 ```
 $ sudo yum localinstall http://packages.groonga.org/centos/6/x86_64/Packages/mecab-0.996-1.el6.x86_64.rpm \
@@ -19,7 +38,7 @@ $ sudo yum localinstall http://packages.groonga.org/centos/6/x86_64/Packages/mec
 
 #### edit my.cnf
 
-First, add configuration to `[mysqld]` section. and then, restart mysql.  
+add configuration to `[mysqld]` section. then, restart mysql.
 
 ```
 # mysqlftppc
@@ -28,19 +47,14 @@ mecab_unicode_version = 3.2
 mecab_dicdir = /usr/lib64/mecab/dic/ipadic
 ```
 
-Note:  
-You can get `mecab_dicdir` path with command `mecab --dump-config | grep dicdir`.
+Note: You can get `mecab_dicdir` path with command `mecab --dump-config | grep dicdir`.
+
+```sh
+$ sudo /etc/init.d/mysql restart
+```
 
 #### install mysqlftppc-mecab
 
-install dependency libraries.
-
-```sh
-$ sudo yum install libicu-devel
-$ sudo yum localinstall http://packages.groonga.org/centos/6/x86_64/Packages/mecab-0.996-1.el6.x86_64.rpm \
-  http://packages.groonga.org/centos/6/x86_64/Packages/mecab-devel-0.996-1.el6.x86_64.rpm \
-  http://packages.groonga.org/centos/6/x86_64/Packages/mecab-ipadic-2.7.0.20070801-6.el6.1.x86_64.rpm
-```
 build mysqlftppc-mecab and install it.
 
 ```sh
@@ -62,5 +76,24 @@ mysql> SELECT * FROM ft_mecab WHERE MATCH(c) AGAINST('+"天気"' IN BOOLEAN MODE
 ```
 ## Blog Articles
 
-全文検索パーサプラグイン「mysqlftppc」のMySQL-5.6対応版を作りました  
+* 全文検索パーサプラグイン「mysqlftppc」のMySQL-5.6対応版を作りました  
 http://y-ken.hatenablog.com/entry/mysql-parser-plugin-mysqlftppc
+
+## How to contribute
+
+Fork it via GitHub, commit changes and send me a pull request.  
+Pull requests are very welcome!!
+
+## Authors
+
+* hiroaki-kawai
+* Kentaro YOSHIDA [y-ken@GitHub](https://github.com/y-ken)
+
+## License
+
+it has forked from http://sourceforge.net/projects/mysqlftppc/
+
+* Apache License V2.0
+* BSD License
+* GNU General Public License (GPL)
+* GNU Library or Lesser General Public License (LGPL)
